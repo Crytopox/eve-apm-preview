@@ -7,7 +7,6 @@
 #include <QObject>
 #include <QPoint>
 #include <QPointer>
-#include <QSoundEffect>
 #include <QSystemTrayIcon>
 #include <QTimer>
 #include <QVector>
@@ -20,6 +19,8 @@ class HotkeyManager;
 class ConfigDialog;
 class ChatLogReader;
 class ProtocolHandler;
+class QAudioOutput;
+class QMediaPlayer;
 struct CycleGroup;
 
 /// Pre-computed shared state for bulk thumbnail visibility updates
@@ -92,7 +93,8 @@ private:
   std::unique_ptr<WindowCapture> windowCapture;
   std::unique_ptr<HotkeyManager> hotkeyManager;
   std::unique_ptr<ChatLogReader> m_chatLogReader;
-  std::unique_ptr<QSoundEffect> m_soundEffect;
+  std::unique_ptr<QAudioOutput> m_soundAudioOutput;
+  std::unique_ptr<QMediaPlayer> m_soundPlayer;
   std::unique_ptr<ProtocolHandler> m_protocolHandler;
   std::unique_ptr<QLocalServer> m_ipcServer;
   QHash<HWND, ThumbnailWidget *> thumbnails;

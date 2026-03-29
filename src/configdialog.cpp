@@ -8,6 +8,7 @@
 #include "version.h"
 #include "windowcapture.h"
 #include <Psapi.h>
+#include <QAudioOutput>
 #include <QColorDialog>
 #include <QDesktopServices>
 #include <QFileDialog>
@@ -23,6 +24,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMap>
+#include <QMediaPlayer>
 #include <QMessageBox>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -3013,13 +3015,22 @@ void ConfigDialog::createDataSourcesPage() {
     connect(playBtn, &QPushButton::clicked, this, [this, eventType]() {
       QString soundFile = Config::instance().combatEventSoundFile(eventType);
       if (!soundFile.isEmpty() && QFile::exists(soundFile)) {
-        if (!m_testSoundEffect) {
-          m_testSoundEffect = std::make_unique<QSoundEffect>();
+        if (!m_testAudioOutput) {
+          m_testAudioOutput = std::make_unique<QAudioOutput>();
         }
-        m_testSoundEffect->setSource(QUrl::fromLocalFile(soundFile));
+        if (!m_testSoundPlayer) {
+          m_testSoundPlayer = std::make_unique<QMediaPlayer>();
+          m_testSoundPlayer->setAudioOutput(m_testAudioOutput.get());
+        }
+        const QUrl sourceUrl = QUrl::fromLocalFile(soundFile);
+        if (m_testSoundPlayer->source() != sourceUrl) {
+          m_testSoundPlayer->setSource(sourceUrl);
+        } else {
+          m_testSoundPlayer->setPosition(0);
+        }
         int volume = Config::instance().combatEventSoundVolume(eventType);
-        m_testSoundEffect->setVolume(volume / 100.0);
-        m_testSoundEffect->play();
+        m_testAudioOutput->setVolume(volume / 100.0);
+        m_testSoundPlayer->play();
       }
     });
     m_eventSoundPlayButtons[eventType] = playBtn;
@@ -3307,13 +3318,22 @@ void ConfigDialog::createDataSourcesPage() {
     QString soundFile =
         Config::instance().combatEventSoundFile("mining_stopped");
     if (!soundFile.isEmpty() && QFile::exists(soundFile)) {
-      if (!m_testSoundEffect) {
-        m_testSoundEffect = std::make_unique<QSoundEffect>();
+      if (!m_testAudioOutput) {
+        m_testAudioOutput = std::make_unique<QAudioOutput>();
       }
-      m_testSoundEffect->setSource(QUrl::fromLocalFile(soundFile));
+      if (!m_testSoundPlayer) {
+        m_testSoundPlayer = std::make_unique<QMediaPlayer>();
+        m_testSoundPlayer->setAudioOutput(m_testAudioOutput.get());
+      }
+      const QUrl sourceUrl = QUrl::fromLocalFile(soundFile);
+      if (m_testSoundPlayer->source() != sourceUrl) {
+        m_testSoundPlayer->setSource(sourceUrl);
+      } else {
+        m_testSoundPlayer->setPosition(0);
+      }
       int volume = Config::instance().combatEventSoundVolume("mining_stopped");
-      m_testSoundEffect->setVolume(volume / 100.0);
-      m_testSoundEffect->play();
+      m_testAudioOutput->setVolume(volume / 100.0);
+      m_testSoundPlayer->play();
     }
   });
   m_eventSoundPlayButtons["mining_stopped"] = miningSoundPlayBtn;

@@ -13,7 +13,6 @@
 #include <QPushButton>
 #include <QSet>
 #include <QSlider>
-#include <QSoundEffect>
 #include <QSpinBox>
 #include <QStackedWidget>
 #include <QTableWidget>
@@ -25,6 +24,8 @@ class QVBoxLayout;
 class ThumbnailWidget;
 class QNetworkAccessManager;
 class QScrollArea;
+class QAudioOutput;
+class QMediaPlayer;
 
 class ConfigDialog : public QDialog {
   Q_OBJECT
@@ -441,7 +442,8 @@ private:
   QNetworkAccessManager *m_networkManager;
   QString m_latestReleaseUrl;
 
-  std::unique_ptr<QSoundEffect> m_testSoundEffect;
+  std::unique_ptr<QAudioOutput> m_testAudioOutput;
+  std::unique_ptr<QMediaPlayer> m_testSoundPlayer;
 
   SettingBindingManager m_bindingManager;
 };

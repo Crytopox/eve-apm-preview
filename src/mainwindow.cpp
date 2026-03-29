@@ -8,6 +8,7 @@
 #include "thumbnailwidget.h"
 #include "windowcapture.h"
 #include <QAction>
+#include <QAudioOutput>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
@@ -16,6 +17,7 @@
 #include <QGuiApplication>
 #include <QIcon>
 #include <QLocalSocket>
+#include <QMediaPlayer>
 #include <QMessageBox>
 #include <QPainter>
 #include <QPixmap>
@@ -36,9 +38,11 @@ QPointer<MainWindow> MainWindow::s_instance;
 MainWindow::MainWindow(QObject *parent)
     : QObject(parent), windowCapture(std::make_unique<WindowCapture>()),
       hotkeyManager(std::make_unique<HotkeyManager>()),
-      m_soundEffect(std::make_unique<QSoundEffect>()),
+      m_soundAudioOutput(std::make_unique<QAudioOutput>()),
+      m_soundPlayer(std::make_unique<QMediaPlayer>()),
       m_notLoggedInCycleIndex(-1), m_nonEVECycleIndex(-1) {
   s_instance = this;
+  m_soundPlayer->setAudioOutput(m_soundAudioOutput.get());
 
   connect(hotkeyManager.get(), &HotkeyManager::characterHotkeyPressed, this,
           &MainWindow::activateCharacter);
@@ -2491,10 +2495,15 @@ void MainWindow::onCombatEventDetected(const QString &characterName,
     if (cfg.combatEventSoundEnabled(eventType)) {
       QString soundFile = cfg.combatEventSoundFile(eventType);
       if (!soundFile.isEmpty() && QFile::exists(soundFile)) {
-        m_soundEffect->setSource(QUrl::fromLocalFile(soundFile));
+        const QUrl sourceUrl = QUrl::fromLocalFile(soundFile);
+        if (m_soundPlayer->source() != sourceUrl) {
+          m_soundPlayer->setSource(sourceUrl);
+        } else {
+          m_soundPlayer->setPosition(0);
+        }
         qreal volume = cfg.combatEventSoundVolume(eventType) / 100.0;
-        m_soundEffect->setVolume(volume);
-        m_soundEffect->play();
+        m_soundAudioOutput->setVolume(volume);
+        m_soundPlayer->play();
         qDebug() << "MainWindow: Playing sound for" << eventType
                  << "- File:" << soundFile << "- Volume:" << volume;
       } else {
