@@ -1,0 +1,76 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Qt 6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.3"
+          host: "windows"
+          target: "desktop"
+          arch: "win64_msvc2022_64"
+          modules: "qtmultimedia"
+          cache: true
+
+      - name: Configure (CMake)
+        shell: pwsh
+        run: |
+          cmake -S . -B build `
+            -G "Visual Studio 17 2022" `
+            -A x64 `
+            -DQt6_DIR="$env:Qt6_DIR"
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build build --config Release --parallel
+
+      - name: Deploy Qt Runtime
+        shell: pwsh
+        run: |
+          $exeFile = Get-ChildItem -Path "build" -Filter "EVEAPMPreview.exe" -Recurse -File | Select-Object -First 1
+          if (-not $exeFile) {
+            throw "Expected executable not found under build/"
+          }
+          $exe = $exeFile.FullName
+          "Using executable: $exe"
+          $windeployqtCmd = Get-Command "windeployqt.exe" -ErrorAction SilentlyContinue
+          if ($windeployqtCmd) {
+            $windeployqt = $windeployqtCmd.Source
+          } else {
+            $candidates = @()
+            if ($env:GITHUB_WORKSPACE) {
+              $candidates += Get-ChildItem -Path $env:GITHUB_WORKSPACE -Filter "windeployqt.exe" -Recurse -File -ErrorAction SilentlyContinue
+            }
+            if ($env:RUNNER_WORKSPACE) {
+              $candidates += Get-ChildItem -Path $env:RUNNER_WORKSPACE -Filter "windeployqt.exe" -Recurse -File -ErrorAction SilentlyContinue
+            }
+            $windeployqt = ($candidates | Select-Object -First 1).FullName
+          }
+          if (-not $windeployqt -or !(Test-Path $windeployqt)) {
+            throw "windeployqt.exe not found in PATH or workspace."
+          }
+          "Using windeployqt: $windeployqt"
+          & $windeployqt --no-translations --no-system-d3d-compiler --no-opengl-sw $exe
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EVEAPMPreview-windows
+          path: |
+            build/bin/**
+            build/Release/**
+          if-no-files-found: error
