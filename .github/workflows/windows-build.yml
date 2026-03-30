@@ -39,6 +39,7 @@ jobs:
         run: cmake --build build --config Release --parallel
 
       - name: Deploy Qt Runtime
+        id: deploy
         shell: pwsh
         run: |
           $exeFile = Get-ChildItem -Path "build" -Filter "EVEAPMPreview.exe" -Recurse -File | Select-Object -First 1
@@ -65,12 +66,63 @@ jobs:
           }
           "Using windeployqt: $windeployqt"
           & $windeployqt --no-translations --no-system-d3d-compiler --no-opengl-sw $exe
+          "exe_path=$exe" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "exe_dir=$(Split-Path $exe -Parent)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Create single-file EXE package
+        id: package
+        shell: pwsh
+        run: |
+          $exeDir = "${{ steps.deploy.outputs.exe_dir }}"
+          if ([string]::IsNullOrWhiteSpace($exeDir) -or !(Test-Path $exeDir)) {
+            throw "Invalid deployed exe directory: $exeDir"
+          }
+
+          $stageDir = Join-Path $env:RUNNER_TEMP "apm_payload"
+          if (Test-Path $stageDir) {
+            Remove-Item -Recurse -Force $stageDir
+          }
+          New-Item -ItemType Directory -Path $stageDir | Out-Null
+          Copy-Item -Path (Join-Path $exeDir "*") -Destination $stageDir -Recurse -Force
+
+          $archivePath = Join-Path $env:RUNNER_TEMP "apm_payload.7z"
+          if (Test-Path $archivePath) {
+            Remove-Item -Force $archivePath
+          }
+          & 7z a -t7z $archivePath (Join-Path $stageDir "*") -mx=9 | Out-Host
+          if (!(Test-Path $archivePath)) {
+            throw "Failed to create 7z payload archive."
+          }
+
+          $sfxPath = Join-Path $env:ProgramFiles "7-Zip\\7z.sfx"
+          if (!(Test-Path $sfxPath) -and ${env:ProgramFiles(x86)}) {
+            $sfxPath = Join-Path ${env:ProgramFiles(x86)} "7-Zip\\7z.sfx"
+          }
+          if (!(Test-Path $sfxPath)) {
+            throw "7z.sfx not found on runner."
+          }
+
+          $configPath = Join-Path $env:RUNNER_TEMP "apm_sfx_config.txt"
+          @'
+;!@Install@!UTF-8!
+Title="EVE-APM Preview"
+RunProgram="EVEAPMPreview.exe"
+;!@InstallEnd@!
+'@ | Set-Content -Path $configPath -Encoding ASCII
+
+          $singleExePath = Join-Path $env:GITHUB_WORKSPACE "EVEAPMPreview-single.exe"
+          if (Test-Path $singleExePath) {
+            Remove-Item -Force $singleExePath
+          }
+          cmd /c "copy /b `"$sfxPath`"+`"$configPath`"+`"$archivePath`" `"$singleExePath`""
+          if (!(Test-Path $singleExePath)) {
+            throw "Failed to create single-file EXE package."
+          }
+          "single_exe_path=$singleExePath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: EVEAPMPreview-windows
-          path: |
-            build/bin/**
-            build/Release/**
+          name: EVEAPMPreview-single-exe
+          path: ${{ steps.package.outputs.single_exe_path }}
           if-no-files-found: error
