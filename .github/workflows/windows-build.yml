@@ -103,12 +103,13 @@ jobs:
           }
 
           $configPath = Join-Path $env:RUNNER_TEMP "apm_sfx_config.txt"
-          @'
-;!@Install@!UTF-8!
-Title="EVE-APM Preview"
-RunProgram="EVEAPMPreview.exe"
-;!@InstallEnd@!
-'@ | Set-Content -Path $configPath -Encoding ASCII
+          $configLines = @(
+            ';!@Install@!UTF-8!'
+            'Title="EVE-APM Preview"'
+            'RunProgram="EVEAPMPreview.exe"'
+            ';!@InstallEnd@!'
+          )
+          $configLines | Set-Content -Path $configPath -Encoding ASCII
 
           $singleExePath = Join-Path $env:GITHUB_WORKSPACE "EVEAPMPreview-single.exe"
           if (Test-Path $singleExePath) {
