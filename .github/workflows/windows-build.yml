@@ -1,45 +1,50 @@
-name: Build Windows EXE
+name: Build Windows Static EXE
 
 on:
   push:
     branches:
-      - main
+      - build
       - master
   pull_request:
   workflow_dispatch:
 
 jobs:
-  build-windows:
+  build-windows-static:
     runs-on: windows-latest
+    timeout-minutes: 180
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Qt 6
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: "6.8.3"
-          host: "windows"
-          target: "desktop"
-          arch: "win64_msvc2022_64"
-          modules: "qtmultimedia"
-          cache: true
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Configure (CMake)
+      - name: Setup vcpkg
+        uses: lukka/get-vcpkg@v11
+
+      - name: Install static Qt dependencies (vcpkg)
+        shell: pwsh
+        run: |
+          vcpkg install qtbase qtmultimedia --triplet x64-windows-static
+
+      - name: Configure (CMake static)
         shell: pwsh
         run: |
           cmake -S . -B build `
             -G "Visual Studio 17 2022" `
             -A x64 `
-            -DQt6_DIR="$env:Qt6_DIR"
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows-static `
+            -DBUILD_SHARED_LIBS=OFF `
+            -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded$<$<CONFIG:Debug>:Debug>"
 
       - name: Build
         shell: pwsh
         run: cmake --build build --config Release --parallel
 
-      - name: Deploy Qt Runtime
-        id: deploy
+      - name: Locate EXE
+        id: locate
         shell: pwsh
         run: |
           $exeFile = Get-ChildItem -Path "build" -Filter "EVEAPMPreview.exe" -Recurse -File | Select-Object -First 1
@@ -48,82 +53,11 @@ jobs:
           }
           $exe = $exeFile.FullName
           "Using executable: $exe"
-          $windeployqtCmd = Get-Command "windeployqt.exe" -ErrorAction SilentlyContinue
-          if ($windeployqtCmd) {
-            $windeployqt = $windeployqtCmd.Source
-          } else {
-            $candidates = @()
-            if ($env:GITHUB_WORKSPACE) {
-              $candidates += Get-ChildItem -Path $env:GITHUB_WORKSPACE -Filter "windeployqt.exe" -Recurse -File -ErrorAction SilentlyContinue
-            }
-            if ($env:RUNNER_WORKSPACE) {
-              $candidates += Get-ChildItem -Path $env:RUNNER_WORKSPACE -Filter "windeployqt.exe" -Recurse -File -ErrorAction SilentlyContinue
-            }
-            $windeployqt = ($candidates | Select-Object -First 1).FullName
-          }
-          if (-not $windeployqt -or !(Test-Path $windeployqt)) {
-            throw "windeployqt.exe not found in PATH or workspace."
-          }
-          "Using windeployqt: $windeployqt"
-          & $windeployqt --no-translations --no-system-d3d-compiler --no-opengl-sw $exe
           "exe_path=$exe" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "exe_dir=$(Split-Path $exe -Parent)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
-      - name: Create single-file EXE package
-        id: package
-        shell: pwsh
-        run: |
-          $exeDir = "${{ steps.deploy.outputs.exe_dir }}"
-          if ([string]::IsNullOrWhiteSpace($exeDir) -or !(Test-Path $exeDir)) {
-            throw "Invalid deployed exe directory: $exeDir"
-          }
-
-          $stageDir = Join-Path $env:RUNNER_TEMP "apm_payload"
-          if (Test-Path $stageDir) {
-            Remove-Item -Recurse -Force $stageDir
-          }
-          New-Item -ItemType Directory -Path $stageDir | Out-Null
-          Copy-Item -Path (Join-Path $exeDir "*") -Destination $stageDir -Recurse -Force
-
-          $archivePath = Join-Path $env:RUNNER_TEMP "apm_payload.7z"
-          if (Test-Path $archivePath) {
-            Remove-Item -Force $archivePath
-          }
-          & 7z a -t7z $archivePath (Join-Path $stageDir "*") -mx=9 | Out-Host
-          if (!(Test-Path $archivePath)) {
-            throw "Failed to create 7z payload archive."
-          }
-
-          $sfxPath = Join-Path $env:ProgramFiles "7-Zip\\7z.sfx"
-          if (!(Test-Path $sfxPath) -and ${env:ProgramFiles(x86)}) {
-            $sfxPath = Join-Path ${env:ProgramFiles(x86)} "7-Zip\\7z.sfx"
-          }
-          if (!(Test-Path $sfxPath)) {
-            throw "7z.sfx not found on runner."
-          }
-
-          $configPath = Join-Path $env:RUNNER_TEMP "apm_sfx_config.txt"
-          $configLines = @(
-            ';!@Install@!UTF-8!'
-            'Title="EVE-APM Preview"'
-            'RunProgram="EVEAPMPreview.exe"'
-            ';!@InstallEnd@!'
-          )
-          $configLines | Set-Content -Path $configPath -Encoding ASCII
-
-          $singleExePath = Join-Path $env:GITHUB_WORKSPACE "EVEAPMPreview-single.exe"
-          if (Test-Path $singleExePath) {
-            Remove-Item -Force $singleExePath
-          }
-          cmd /c "copy /b `"$sfxPath`"+`"$configPath`"+`"$archivePath`" `"$singleExePath`""
-          if (!(Test-Path $singleExePath)) {
-            throw "Failed to create single-file EXE package."
-          }
-          "single_exe_path=$singleExePath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-
-      - name: Upload artifact
+      - name: Upload static EXE artifact
         uses: actions/upload-artifact@v4
         with:
-          name: EVEAPMPreview-single-exe
-          path: ${{ steps.package.outputs.single_exe_path }}
+          name: EVEAPMPreview-static-exe
+          path: ${{ steps.locate.outputs.exe_path }}
           if-no-files-found: error
